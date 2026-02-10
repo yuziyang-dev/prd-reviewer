@@ -217,7 +217,51 @@ def process_pdf(pdf_bytes: bytes, dpi: int = 150) -> tuple[list[str], list[str]]
 # LLM 调用 — Anthropic 原生格式
 # ---------------------------------------------------------------------------
 
-async def call_anthropic(api_key: str, full_text: str, pages_b64: list[str], model: str, base_url: str | None = None):
+# ---------------------------------------------------------------------------
+# 维度映射 — 用于动态构建 prompt
+# ---------------------------------------------------------------------------
+
+DIMENSION_LABELS = {
+    "a1_page_target": "页面目标清晰度",
+    "a2_user_scenario": "用户场景与情感意图",
+    "a3_page_states": "完整页面与状态清单",
+    "a4_design_direction": "设计方向与约束",
+    "a5_content_certainty": "内容与配图确定性",
+    "a6_flow_completeness": "流转关系完整性",
+    "b1_structure": "结构完整性",
+    "b2_goals": "目标与指标",
+    "b3_logic": "逻辑一致性",
+    "b4_edge_cases": "边界与异常",
+    "b5_interaction": "交互细节",
+    "b6_copywriting": "文案与多语言",
+    "b7_scalability": "可扩展性",
+}
+
+ALL_DIM_KEYS = list(DIMENSION_LABELS.keys())
+
+
+def build_system_prompt(enabled_dims: list[str] | None = None) -> str:
+    """根据启用的维度构建 system prompt。全选时返回完整 prompt，否则追加维度过滤指令。"""
+    if not enabled_dims or set(enabled_dims) >= set(ALL_DIM_KEYS):
+        return SYSTEM_PROMPT
+
+    designer_dims = [DIMENSION_LABELS[k] for k in enabled_dims if k.startswith("a")]
+    tech_dims = [DIMENSION_LABELS[k] for k in enabled_dims if k.startswith("b")]
+
+    filter_instruction = "\n\n## ⚠️ 本次审查范围\n用户已选择以下维度进行审查，请**只输出**这些维度的审查结果，跳过未选择的维度：\n"
+    if designer_dims:
+        filter_instruction += f"\n**设计师视角**：{'、'.join(designer_dims)}"
+    if tech_dims:
+        filter_instruction += f"\n**技术视角**：{'、'.join(tech_dims)}"
+    if not designer_dims:
+        filter_instruction += "\n\n设计师视角维度全部跳过，总览表中不需要设计师视角部分。"
+    if not tech_dims:
+        filter_instruction += "\n\n技术视角维度全部跳过，总览表中不需要技术视角部分。"
+
+    return SYSTEM_PROMPT + filter_instruction
+
+
+async def call_anthropic(api_key: str, full_text: str, pages_b64: list[str], model: str, base_url: str | None = None, system_prompt: str = ""):
     """调用 Anthropic Claude API（原生格式），流式返回"""
     import anthropic
 
@@ -239,11 +283,11 @@ async def call_anthropic(api_key: str, full_text: str, pages_b64: list[str], mod
         })
     content.append({
         "type": "text",
-        "text": "\n请按照审查框架，对以上设计单进行完整的双视角深度审查，输出结构化审查报告。",
+        "text": "\n请按照审查框架，对以上设计单进行深度审查，输出结构化审查报告。",
     })
 
     async with client.messages.stream(
-        model=model, max_tokens=16000, system=SYSTEM_PROMPT,
+        model=model, max_tokens=16000, system=system_prompt or SYSTEM_PROMPT,
         messages=[{"role": "user", "content": content}],
     ) as stream:
         async for text in stream.text_stream:
@@ -254,7 +298,7 @@ async def call_anthropic(api_key: str, full_text: str, pages_b64: list[str], mod
 # LLM 调用 — OpenAI 兼容格式（OpenAI / OpenRouter / 中转服务）
 # ---------------------------------------------------------------------------
 
-async def call_openai_compat(api_key: str, full_text: str, pages_b64: list[str], model: str, base_url: str | None = None):
+async def call_openai_compat(api_key: str, full_text: str, pages_b64: list[str], model: str, base_url: str | None = None, system_prompt: str = ""):
     """调用 OpenAI 兼容 API（OpenAI / OpenRouter / 中转），流式返回"""
     from openai import AsyncOpenAI
 
@@ -276,13 +320,13 @@ async def call_openai_compat(api_key: str, full_text: str, pages_b64: list[str],
         })
     content.append({
         "type": "text",
-        "text": "\n请按照审查框架，对以上设计单进行完整的双视角深度审查，输出结构化审查报告。",
+        "text": "\n请按照审查框架，对以上设计单进行深度审查，输出结构化审查报告。",
     })
 
     stream = await client.chat.completions.create(
         model=model, max_tokens=16000,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
             {"role": "user", "content": content},
         ],
         stream=True,
@@ -305,6 +349,7 @@ async def review(
     provider: str = Form("openrouter"),
     model: str = Form(""),
     base_url: str = Form(""),
+    dimensions: str = Form(""),
 ):
     pdf_bytes = await file.read()
 
@@ -313,7 +358,18 @@ async def review(
     use_base_url = base_url or cfg["base_url"]
     api_format = cfg["format"]
 
-    print(f"[INFO] provider={provider}, model={use_model}, base_url={use_base_url}, pdf_size={len(pdf_bytes)} bytes")
+    # 解析启用的维度
+    enabled_dims = None
+    if dimensions:
+        try:
+            enabled_dims = json.loads(dimensions)
+        except json.JSONDecodeError:
+            pass
+
+    system_prompt = build_system_prompt(enabled_dims)
+    dim_count = len(enabled_dims) if enabled_dims else len(ALL_DIM_KEYS)
+
+    print(f"[INFO] provider={provider}, model={use_model}, base_url={use_base_url}, dims={dim_count}/{len(ALL_DIM_KEYS)}, pdf_size={len(pdf_bytes)} bytes")
 
     async def generate():
         yield _sse({"type": "progress", "step": 1, "message": "正在解析 PDF 文档..."})
@@ -329,7 +385,8 @@ async def review(
         yield _sse({"type": "progress", "step": 1, "message": f"PDF 解析完成，共 {total_pages} 页"})
         await asyncio.sleep(0.05)
 
-        yield _sse({"type": "progress", "step": 2, "message": f"正在使用 {use_model} 进行双视角审查..."})
+        dim_label = f"（{dim_count} 个维度）" if dim_count < len(ALL_DIM_KEYS) else ""
+        yield _sse({"type": "progress", "step": 2, "message": f"正在使用 {use_model} 审查{dim_label}..."})
         await asyncio.sleep(0.05)
 
         full_text = "\n\n".join(
@@ -338,9 +395,9 @@ async def review(
 
         try:
             if api_format == "anthropic":
-                streamer = call_anthropic(api_key, full_text, pages_b64, use_model, use_base_url)
+                streamer = call_anthropic(api_key, full_text, pages_b64, use_model, use_base_url, system_prompt)
             else:
-                streamer = call_openai_compat(api_key, full_text, pages_b64, use_model, use_base_url)
+                streamer = call_openai_compat(api_key, full_text, pages_b64, use_model, use_base_url, system_prompt)
 
             async for chunk in streamer:
                 yield _sse({"type": "content", "text": chunk})
