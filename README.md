@@ -9,28 +9,29 @@
 - 流式输出审查报告，支持复制和下载 Markdown
 - 支持 OpenRouter / Anthropic Claude / OpenAI GPT-4o
 
-## 部署到 Vercel
+## 部署到 Railway（推荐）
 
 ### 1. 推送到 GitHub
 
 ```bash
 cd prd-reviewer
-git init && git add . && git commit -m "init"
 gh repo create prd-reviewer --public --push --source=.
 ```
 
-### 2. 导入 Vercel
+### 2. 部署到 Railway
 
-1. 打开 [vercel.com/new](https://vercel.com/new)
-2. 导入你的 GitHub 仓库
-3. 直接部署，无需额外配置
+1. 打开 [railway.app/new](https://railway.app/new)
+2. 选择 **Deploy from GitHub repo**
+3. 选择 `prd-reviewer` 仓库
+4. Railway 自动检测 Python 项目并部署
+5. 部署完成后，在 Settings → Networking 点击 **Generate Domain** 获取公网 URL
 
 ### 3. 使用
 
-访问部署后的 URL，点击设置齿轮：
-- 选择 **OpenRouter**
+访问部署后的 URL，点击右上角设置齿轮：
+- 选择 **OpenRouter**（或其他 AI 服务商）
 - 填入 API Key（在 [openrouter.ai/keys](https://openrouter.ai/keys) 获取）
-- 开始审查
+- 上传 PDF，开始审查
 
 ## 本地开发
 
@@ -40,14 +41,8 @@ python app.py
 # 访问 http://localhost:8000
 ```
 
-## 已知限制
-
-- **Vercel 请求体上限 4.5MB**：超大 PDF 文件可能上传失败，建议压缩后上传
-- **Vercel 超时**：免费版 60s / Pro 版 300s，页数特别多时可能超时
-- 本地运行无上述限制
-
 ## 技术栈
 
 - **后端**：FastAPI + PyMuPDF + OpenAI SDK
 - **前端**：HTML + Tailwind CSS + marked.js
-- **部署**：Vercel Python Serverless Functions
+- **部署**：Railway（无文件大小限制，超时上限 5 分钟）
