@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PRD Reviewer - 需求文档智能审查</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  /* ---------- base ---------- */
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+
+  /* ---------- upload zone ---------- */
+  .upload-zone { transition: all .25s ease; }
+  .upload-zone.dragover { border-color: #3b82f6; background: #eff6ff; transform: scale(1.01); }
+
+  /* ---------- step indicator ---------- */
+  .step { transition: all .3s ease; }
+  .step.active .step-dot { background: #3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,.2); }
+  .step.done .step-dot { background: #22c55e; }
+  .step.active .step-label, .step.done .step-label { color: #1e293b; font-weight: 600; }
+  .step-connector { transition: background .3s ease; }
+  .step.done + .step .step-connector { background: #22c55e; }
+
+  /* ---------- report prose ---------- */
+  .report-body h1 { font-size: 1.5rem; font-weight: 700; margin: 1.5rem 0 .75rem; padding-bottom: .5rem; border-bottom: 2px solid #e2e8f0; }
+  .report-body h2 { font-size: 1.25rem; font-weight: 700; margin: 1.5rem 0 .5rem; color: #1e40af; }
+  .report-body h3 { font-size: 1.1rem; font-weight: 600; margin: 1.25rem 0 .5rem; }
+  .report-body h4 { font-size: 1rem; font-weight: 600; margin: 1rem 0 .4rem; }
+  .report-body p { margin: .5rem 0; line-height: 1.75; }
+  .report-body ul, .report-body ol { margin: .5rem 0 .5rem 1.5rem; }
+  .report-body li { margin: .25rem 0; line-height: 1.7; }
+  .report-body table { width: 100%; border-collapse: collapse; margin: .75rem 0; font-size: .9rem; }
+  .report-body th, .report-body td { border: 1px solid #e2e8f0; padding: .5rem .75rem; text-align: left; }
+  .report-body th { background: #f8fafc; font-weight: 600; }
+  .report-body strong { font-weight: 700; }
+  .report-body hr { margin: 1.5rem 0; border-color: #e2e8f0; }
+  .report-body code { background: #f1f5f9; padding: .15rem .35rem; border-radius: .25rem; font-size: .875rem; }
+  .report-body blockquote { border-left: 4px solid #3b82f6; padding: .5rem 1rem; margin: .75rem 0; background: #f8fafc; }
+
+  /* ---------- modal ---------- */
+  .modal-backdrop { transition: opacity .2s ease; }
+  .modal-panel { transition: transform .2s ease, opacity .2s ease; }
+
+  /* ---------- typing cursor ---------- */
+  .typing-cursor::after { content: "▍"; animation: blink 1s step-end infinite; color: #3b82f6; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---------- fade ---------- */
+  .fade-in { animation: fadeIn .4s ease; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+
+<body class="bg-gray-50 min-h-screen">
+
+<!-- ==================== Header ==================== -->
+<header class="bg-white border-b border-gray-200 sticky top-0 z-30">
+  <div class="max-w-4xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-gray-900 leading-tight">PRD Reviewer</h1>
+        <p class="text-xs text-gray-500 leading-tight">产品需求文档智能审查</p>
+      </div>
+    </div>
+    <button onclick="openSettings()" class="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition" title="设置">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- ==================== Main ==================== -->
+<main class="max-w-4xl mx-auto px-6 py-8">
+
+  <!-- ---- Upload Zone ---- -->
+  <div id="uploadSection" class="fade-in">
+    <div
+      id="uploadZone"
+      class="upload-zone border-2 border-dashed border-gray-300 rounded-2xl p-12 text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 bg-white"
+      onclick="document.getElementById('fileInput').click()"
+    >
+      <input type="file" id="fileInput" accept=".pdf" class="hidden" onchange="handleFile(this.files[0])" />
+      <div class="flex flex-col items-center gap-4">
+        <div class="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center">
+          <svg class="w-8 h-8 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+        </div>
+        <div>
+          <p class="text-lg font-semibold text-gray-700">拖拽上传 PDF 文件</p>
+          <p class="text-sm text-gray-400 mt-1">或点击此处选择文件</p>
+        </div>
+        <p class="text-xs text-gray-400">支持 PM 设计单、PRD、需求文档等 PDF 格式</p>
+      </div>
+    </div>
+
+    <!-- File info -->
+    <div id="fileInfo" class="hidden mt-4 bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between fade-in">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center">
+          <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM6 20V4h7v5h5v11H6z"/></svg>
+        </div>
+        <div>
+          <p id="fileName" class="text-sm font-medium text-gray-800"></p>
+          <p id="fileSize" class="text-xs text-gray-400"></p>
+        </div>
+      </div>
+      <button onclick="resetUpload()" class="text-sm text-gray-400 hover:text-red-500 transition">移除</button>
+    </div>
+
+    <!-- Start button -->
+    <button
+      id="startBtn"
+      class="hidden mt-6 w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition shadow-lg shadow-blue-200 active:scale-[.98]"
+      onclick="startReview()"
+    >
+      开始审查
+    </button>
+  </div>
+
+  <!-- ---- Progress ---- -->
+  <div id="progressSection" class="hidden fade-in">
+    <!-- Steps -->
+    <div class="bg-white rounded-2xl border border-gray-200 p-6 mb-6">
+      <div class="flex items-center justify-between">
+        <div class="step flex flex-col items-center flex-1" id="step1">
+          <div class="step-dot w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-white text-sm font-bold transition">1</div>
+          <span class="step-label text-xs text-gray-400 mt-2">上传文件</span>
+        </div>
+        <div class="step-connector h-0.5 flex-1 bg-gray-200 -mt-5"></div>
+        <div class="step flex flex-col items-center flex-1" id="step2">
+          <div class="step-dot w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-white text-sm font-bold transition">2</div>
+          <span class="step-label text-xs text-gray-400 mt-2">解析 PDF</span>
+        </div>
+        <div class="step-connector h-0.5 flex-1 bg-gray-200 -mt-5"></div>
+        <div class="step flex flex-col items-center flex-1" id="step3">
+          <div class="step-dot w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-white text-sm font-bold transition">3</div>
+          <span class="step-label text-xs text-gray-400 mt-2">AI 审查</span>
+        </div>
+        <div class="step-connector h-0.5 flex-1 bg-gray-200 -mt-5"></div>
+        <div class="step flex flex-col items-center flex-1" id="step4">
+          <div class="step-dot w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-white text-sm font-bold transition">4</div>
+          <span class="step-label text-xs text-gray-400 mt-2">审查报告</span>
+        </div>
+      </div>
+      <p id="progressMsg" class="text-sm text-gray-500 text-center mt-5">准备中...</p>
+    </div>
+
+    <!-- Report area -->
+    <div id="reportCard" class="hidden bg-white rounded-2xl border border-gray-200 overflow-hidden fade-in">
+      <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <h2 class="font-semibold text-gray-800">审查报告</h2>
+        <div id="reportActions" class="hidden flex items-center gap-2">
+          <button onclick="copyReport()" class="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+            复制
+          </button>
+          <button onclick="downloadReport()" class="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            下载 Markdown
+          </button>
+        </div>
+      </div>
+      <div id="reportBody" class="report-body px-6 py-5 text-sm text-gray-700 leading-relaxed"></div>
+    </div>
+
+    <!-- New review button -->
+    <div id="newReviewBtn" class="hidden mt-6 text-center fade-in">
+      <button onclick="resetAll()" class="px-6 py-2.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-xl transition">
+        审查新文档
+      </button>
+    </div>
+  </div>
+
+</main>
+
+<!-- ==================== Settings Modal ==================== -->
+<div id="settingsModal" class="hidden fixed inset-0 z-50">
+  <div class="modal-backdrop absolute inset-0 bg-black/40" onclick="closeSettings()"></div>
+  <div class="modal-panel absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white rounded-2xl shadow-2xl p-6">
+    <div class="flex items-center justify-between mb-5">
+      <h3 class="text-lg font-bold text-gray-900">设置</h3>
+      <button onclick="closeSettings()" class="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Provider -->
+    <label class="block text-sm font-medium text-gray-700 mb-2">AI 服务商</label>
+    <div class="flex gap-3 mb-5">
+      <label class="flex-1 cursor-pointer">
+        <input type="radio" name="provider" value="openrouter" class="peer hidden" checked onchange="onProviderChange()" />
+        <div class="peer-checked:border-blue-500 peer-checked:bg-blue-50 border-2 border-gray-200 rounded-xl p-3 text-center transition">
+          <p class="font-semibold text-sm text-gray-800">OpenRouter</p>
+          <p class="text-xs text-gray-400">多模型聚合</p>
+        </div>
+      </label>
+      <label class="flex-1 cursor-pointer">
+        <input type="radio" name="provider" value="anthropic" class="peer hidden" onchange="onProviderChange()" />
+        <div class="peer-checked:border-blue-500 peer-checked:bg-blue-50 border-2 border-gray-200 rounded-xl p-3 text-center transition">
+          <p class="font-semibold text-sm text-gray-800">Claude</p>
+          <p class="text-xs text-gray-400">Anthropic</p>
+        </div>
+      </label>
+      <label class="flex-1 cursor-pointer">
+        <input type="radio" name="provider" value="openai" class="peer hidden" onchange="onProviderChange()" />
+        <div class="peer-checked:border-blue-500 peer-checked:bg-blue-50 border-2 border-gray-200 rounded-xl p-3 text-center transition">
+          <p class="font-semibold text-sm text-gray-800">GPT-4o</p>
+          <p class="text-xs text-gray-400">OpenAI</p>
+        </div>
+      </label>
+    </div>
+
+    <!-- Model -->
+    <label class="block text-sm font-medium text-gray-700 mb-2">模型</label>
+    <input
+      id="modelInput"
+      type="text"
+      placeholder="留空使用默认模型"
+      class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition mb-1"
+    />
+    <p id="modelHint" class="text-xs text-gray-400 mb-5">OpenRouter 常用：anthropic/claude-sonnet-4 / openai/gpt-4o / google/gemini-2.5-pro</p>
+
+    <!-- API Key -->
+    <label class="block text-sm font-medium text-gray-700 mb-2">API Key</label>
+    <input
+      id="apiKeyInput"
+      type="password"
+      placeholder="sk-..."
+      class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+    />
+    <p class="text-xs text-gray-400 mt-2 mb-5">Key 仅存储在浏览器本地，不会上传至第三方</p>
+
+    <!-- Base URL -->
+    <div id="baseUrlGroup">
+      <label class="block text-sm font-medium text-gray-700 mb-2">API 地址 <span class="text-gray-400 font-normal">(可选)</span></label>
+      <input
+        id="baseUrlInput"
+        type="text"
+        placeholder="留空使用官方地址，第三方中转填写对应地址"
+        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+      />
+      <p class="text-xs text-gray-400 mt-2">如使用 API 中转/代理服务，请填写其提供的 Base URL<br/>例如：https://api.example.com/v1</p>
+    </div>
+
+    <!-- Save -->
+    <button onclick="saveSettings()" class="mt-5 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition text-sm">
+      保存
+    </button>
+  </div>
+</div>
+
+<!-- ==================== Toast ==================== -->
+<div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 bg-gray-800 text-white text-sm rounded-xl shadow-lg transition-all"></div>
+
+<!-- ==================== Scripts ==================== -->
+<script>
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let selectedFile = null;
+let reportMarkdown = "";
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+// Provider 提示配置
+const PROVIDER_HINTS = {
+  openrouter: {
+    modelHint: 'OpenRouter 常用：anthropic/claude-sonnet-4 / openai/gpt-4o / google/gemini-2.5-pro',
+    keyPlaceholder: 'sk-or-v1-...',
+    showBaseUrl: false,
+  },
+  anthropic: {
+    modelHint: 'Claude 常用：claude-sonnet-4-20250514 / claude-3-5-sonnet-20241022',
+    keyPlaceholder: 'sk-ant-...',
+    showBaseUrl: true,
+  },
+  openai: {
+    modelHint: 'OpenAI 常用：gpt-4o / gpt-4o-mini',
+    keyPlaceholder: 'sk-...',
+    showBaseUrl: true,
+  },
+};
+
+function getSettings() {
+  return {
+    provider: localStorage.getItem("prd_provider") || "openrouter",
+    apiKey: localStorage.getItem("prd_api_key") || "",
+    model: localStorage.getItem("prd_model") || "",
+    baseUrl: localStorage.getItem("prd_base_url") || "",
+  };
+}
+
+function onProviderChange() {
+  const provider = document.querySelector('input[name="provider"]:checked').value;
+  const hints = PROVIDER_HINTS[provider] || PROVIDER_HINTS.openrouter;
+  document.getElementById("modelHint").textContent = hints.modelHint;
+  document.getElementById("apiKeyInput").placeholder = hints.keyPlaceholder;
+  document.getElementById("baseUrlGroup").style.display = hints.showBaseUrl ? "block" : "none";
+}
+
+function openSettings() {
+  const s = getSettings();
+  const providerEl = document.querySelector(`input[name="provider"][value="${s.provider}"]`);
+  if (providerEl) providerEl.checked = true;
+  document.getElementById("apiKeyInput").value = s.apiKey;
+  document.getElementById("modelInput").value = s.model;
+  document.getElementById("baseUrlInput").value = s.baseUrl;
+  onProviderChange();
+  document.getElementById("settingsModal").classList.remove("hidden");
+}
+
+function closeSettings() {
+  document.getElementById("settingsModal").classList.add("hidden");
+}
+
+function saveSettings() {
+  const provider = document.querySelector('input[name="provider"]:checked').value;
+  const apiKey = document.getElementById("apiKeyInput").value.trim();
+  const model = document.getElementById("modelInput").value.trim();
+  const baseUrl = document.getElementById("baseUrlInput").value.trim();
+  localStorage.setItem("prd_provider", provider);
+  localStorage.setItem("prd_api_key", apiKey);
+  localStorage.setItem("prd_model", model);
+  localStorage.setItem("prd_base_url", baseUrl);
+  closeSettings();
+  showToast("设置已保存");
+}
+
+// ---------------------------------------------------------------------------
+// Upload
+// ---------------------------------------------------------------------------
+const uploadZone = document.getElementById("uploadZone");
+
+uploadZone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  uploadZone.classList.add("dragover");
+});
+uploadZone.addEventListener("dragleave", () => uploadZone.classList.remove("dragover"));
+uploadZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  uploadZone.classList.remove("dragover");
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === "application/pdf") handleFile(file);
+  else showToast("请上传 PDF 文件");
+});
+
+function handleFile(file) {
+  if (!file) return;
+  selectedFile = file;
+  document.getElementById("fileName").textContent = file.name;
+  document.getElementById("fileSize").textContent = (file.size / 1024 / 1024).toFixed(2) + " MB";
+  document.getElementById("fileInfo").classList.remove("hidden");
+  document.getElementById("startBtn").classList.remove("hidden");
+  uploadZone.classList.add("hidden");
+}
+
+function resetUpload() {
+  selectedFile = null;
+  document.getElementById("fileInput").value = "";
+  document.getElementById("fileInfo").classList.add("hidden");
+  document.getElementById("startBtn").classList.add("hidden");
+  uploadZone.classList.remove("hidden");
+}
+
+// ---------------------------------------------------------------------------
+// Review
+// ---------------------------------------------------------------------------
+async function startReview() {
+  const { provider, apiKey } = getSettings();
+  if (!apiKey) { openSettings(); showToast("请先填写 API Key"); return; }
+  if (!selectedFile) { showToast("请先上传 PDF 文件"); return; }
+
+  // Switch to progress view
+  document.getElementById("uploadSection").classList.add("hidden");
+  document.getElementById("progressSection").classList.remove("hidden");
+  reportMarkdown = "";
+  setStep(1);
+
+  // Build form data
+  const { model, baseUrl } = getSettings();
+  const form = new FormData();
+  form.append("file", selectedFile);
+  form.append("api_key", apiKey);
+  form.append("provider", provider);
+  if (model) form.append("model", model);
+  if (baseUrl) form.append("base_url", baseUrl);
+
+  try {
+    const resp = await fetch("/api/review", { method: "POST", body: form });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    // Show report card
+    document.getElementById("reportCard").classList.remove("hidden");
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE lines
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6);
+        let evt;
+        try { evt = JSON.parse(raw); } catch { continue; }
+
+        if (evt.type === "progress") {
+          setStep(evt.step);
+          document.getElementById("progressMsg").textContent = evt.message;
+        } else if (evt.type === "content") {
+          setStep(3);
+          reportMarkdown += evt.text;
+          renderReport(reportMarkdown, true);
+        } else if (evt.type === "error") {
+          const msgEl = document.getElementById("progressMsg");
+          msgEl.innerHTML = evt.message.replace(/\n/g, "<br>");
+          msgEl.classList.add("text-red-500");
+          document.getElementById("newReviewBtn").classList.remove("hidden");
+          return;
+        } else if (evt.type === "done") {
+          setStep(4);
+          renderReport(reportMarkdown, false);
+          document.getElementById("progressMsg").textContent = "审查完成！";
+          document.getElementById("reportActions").classList.remove("hidden");
+          document.getElementById("reportActions").style.display = "flex";
+          document.getElementById("newReviewBtn").classList.remove("hidden");
+        }
+      }
+    }
+  } catch (err) {
+    document.getElementById("progressMsg").textContent = "网络错误：" + err.message;
+    document.getElementById("progressMsg").classList.add("text-red-500");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Steps
+// ---------------------------------------------------------------------------
+function setStep(n) {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById(`step${i}`);
+    el.classList.remove("active", "done");
+    if (i < n) el.classList.add("done");
+    else if (i === n) el.classList.add("active");
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Report rendering
+// ---------------------------------------------------------------------------
+function renderReport(md, streaming) {
+  const body = document.getElementById("reportBody");
+  body.innerHTML = marked.parse(md);
+  if (streaming) body.classList.add("typing-cursor");
+  else body.classList.remove("typing-cursor");
+  // Auto-scroll to bottom
+  body.scrollTop = body.scrollHeight;
+}
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+function copyReport() {
+  navigator.clipboard.writeText(reportMarkdown).then(() => showToast("已复制到剪贴板"));
+}
+
+function downloadReport() {
+  const blob = new Blob([reportMarkdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "需求审查报告.md";
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast("报告已下载");
+}
+
+// ---------------------------------------------------------------------------
+// Reset
+// ---------------------------------------------------------------------------
+function resetAll() {
+  selectedFile = null;
+  reportMarkdown = "";
+  document.getElementById("fileInput").value = "";
+  document.getElementById("fileInfo").classList.add("hidden");
+  document.getElementById("startBtn").classList.add("hidden");
+  uploadZone.classList.remove("hidden");
+  document.getElementById("uploadSection").classList.remove("hidden");
+  document.getElementById("progressSection").classList.add("hidden");
+  document.getElementById("reportCard").classList.add("hidden");
+  document.getElementById("reportActions").classList.add("hidden");
+  document.getElementById("newReviewBtn").classList.add("hidden");
+  document.getElementById("reportBody").innerHTML = "";
+  document.getElementById("progressMsg").textContent = "准备中...";
+  document.getElementById("progressMsg").classList.remove("text-red-500");
+  setStep(0);
+}
+
+// ---------------------------------------------------------------------------
+// Toast
+// ---------------------------------------------------------------------------
+function showToast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 2500);
+}
+</script>
+</body>
+</html>
