@@ -2425,9 +2425,13 @@ async function startReview() {
 function renderReport(md, streaming) {
   const body = document.getElementById("reportBody");
   body.innerHTML = marked.parse(md);
-  if (streaming) body.classList.add("typing-cursor");
-  else body.classList.remove("typing-cursor");
-  body.scrollTop = body.scrollHeight;
+  if (streaming) {
+    body.classList.add("typing-cursor");
+    // Auto-scroll page to keep latest content visible
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  } else {
+    body.classList.remove("typing-cursor");
+  }
 }
 
 // =====================================================================
